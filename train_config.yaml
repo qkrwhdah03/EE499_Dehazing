@@ -1,0 +1,31 @@
+model: 
+  num_frames: 4 # Must be matched with dataset.num_frmaes
+  embed_dim: 64
+  encoder:
+    embed_dim: 64
+  decoder: 
+    num_frames: 4
+    embed_dim: 64
+    
+train:
+  save_path: "/mnt/home/20263312/dehazing/checkpoint" # Saving directory path
+  save_interval: 20
+  seed: 42
+  epochs: 60
+  loss_type: 'l1'
+  clip_grad: false
+  max_grad: 1.0
+  lr: 1e-4
+
+  dataset:
+    root_dir: "/mnt/home/20263312/data" # Dataset root directory path
+    num_frames: 4 
+    batch_size: 2
+    num_workers: 2
+    shuffle: true
+    pin_memory: true
+    drop_last: true
+    persistent_workers: true
+  
+  transform:
+    crop_size: 384
