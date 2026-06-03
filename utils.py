@@ -80,7 +80,7 @@ class ASMVideoConstraint(nn.Module):
     def _calculate_transmission(self, image: torch.Tensor, A: torch.Tensor)-> torch.Tensor:
         min_c = torch.min(image / A, dim=1, keepdim=True)[0]
         padded_min_c = F.pad(min_c, (self.padding, self.padding, self.padding, self.padding), mode='replicate')
-        min_patch = -F.max_pool2d(-padded_min_c, kernel_size=self.patch_size, stride=1)
+        min_patch = -F.max_pool2d(-padded_min_c, kernel_size=self.patch_size, stride=1, padding=0)
         transmission = 1 - min_patch
         transmission = torch.clamp(transmission, min=self.t0)
         return transmission
@@ -128,8 +128,8 @@ class ASMVideoConstraint(nn.Module):
         '''
         J_t_pred = output_next - output_t
 
-        A, B, B_t, I_t = self._dcp(hazy_t, hazy_next)
-
+        A, B, B_t, I_t = self._dcp(hazy_t, hazy_next) 
+        
         J_t_theoretical = (B_t * hazy_t) + (B * I_t) - (A * B_t)
 
         loss = self.criterion(J_t_pred, J_t_theoretical)
