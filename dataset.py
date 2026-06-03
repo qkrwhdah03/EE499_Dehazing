@@ -243,3 +243,101 @@ class REVIDEInferenceDataset(Dataset):
         gt_frames = torch.stack(gt_frames, dim=0)
 
         return clips, gt_frames, masks, video_name
+
+class REVISEDerivativeDataset(Dataset):
+    def __init__(
+        self,
+        root_dir,
+        split="Train",
+        num_frames=4,
+        transform: Transform | None = None,
+    ):
+        self.root_dir = root_dir
+        self.split = split
+        self.transform = transform
+        self.normalize = NORMALIZE
+        self.num_frames = num_frames
+
+        self.gt_root = os.path.join(root_dir, split, "gt")
+        self.hazy_root = os.path.join(root_dir, split, "hazy")
+
+        self.samples = []
+
+        seq_dirs = sorted(os.listdir(self.gt_root))
+        for seq_name in seq_dirs:
+            gt_seq_dir = os.path.join(self.gt_root, seq_name)
+            hazy_seq_dir = os.path.join(self.hazy_root, seq_name)
+
+            if not os.path.isdir(gt_seq_dir):
+                continue
+
+            frame_names = sorted(os.listdir(gt_seq_dir))
+
+            for idx in range(len(frame_names) - 1):
+                
+                hazy_paths_t = []
+                for frame_idx in range(idx - num_frames + 1, idx + 1):
+                    if frame_idx < 0:
+                        hazy_paths_t.append(None)
+                    else:
+                        hazy_paths_t.append(os.path.join(hazy_seq_dir, frame_names[frame_idx]))
+                gt_path_t = os.path.join(gt_seq_dir, frame_names[idx])
+
+                hazy_paths_next = []
+                for frame_idx in range(idx + 1 - num_frames + 1, idx + 2):
+                    if frame_idx < 0:
+                        hazy_paths_next.append(None)
+                    else:
+                        hazy_paths_next.append(os.path.join(hazy_seq_dir, frame_names[frame_idx]))
+                gt_path_next = os.path.join(gt_seq_dir, frame_names[idx + 1])
+
+                self.samples.append((hazy_paths_t, gt_path_t, hazy_paths_next, gt_path_next))
+
+    def __len__(self):
+        return len(self.samples)
+
+    def _load_frame_and_mask(self, hazy_paths, gt_path):
+        hazy_frames = []
+        mask = []
+        ref_shape = None
+
+        for path in hazy_paths:
+            if path is None:
+                hazy_frames.append(None)
+                mask.append(0)
+            else:
+                img = Image.open(path).convert("RGB")
+                img = self.normalize(img)
+                if ref_shape is None:
+                    ref_shape = img.shape
+                hazy_frames.append(img)
+                mask.append(1)
+
+        C, H, W = ref_shape
+        for i in range(len(hazy_frames)):
+            if hazy_frames[i] is None:
+                hazy_frames[i] = torch.zeros((C, H, W))
+
+        hazy_frames = torch.stack(hazy_frames, dim=0)
+        mask = torch.tensor(mask, dtype=torch.float32)
+
+        gt_frame = Image.open(gt_path).convert("RGB")
+        gt_frame = self.normalize(gt_frame)
+
+        return hazy_frames, gt_frame, mask
+
+    def __getitem__(self, idx):
+        hazy_paths_t, gt_path_t, hazy_paths_next, gt_path_next = self.samples[idx]
+
+        hazy_frames_t, gt_frame_t, mask_t = self._load_frame_and_mask(hazy_paths_t, gt_path_t)
+        hazy_frames_next, gt_frame_next, mask_next = self._load_frame_and_mask(hazy_paths_next, gt_path_next)
+
+        if self.transform is not None:
+            total_hazy = torch.cat([hazy_frames_t, hazy_frames_next], dim=0) 
+            total_gt = torch.cat([gt_frame_t, gt_frame_next], dim=0)
+            total_hazy, total_gt = self.transform(total_hazy, total_gt)
+
+            hazy_frames_t, hazy_frames_next = torch.chunk(total_hazy, 2, dim=0)
+            gt_frame_t, gt_frame_next = torch.chunk(total_gt, 2, dim=0)
+
+        return (hazy_frames_t, gt_frame_t, mask_t), (hazy_frames_next, gt_frame_next, mask_next)
