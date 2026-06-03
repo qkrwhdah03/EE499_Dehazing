@@ -244,7 +244,7 @@ class REVIDEInferenceDataset(Dataset):
 
         return clips, gt_frames, masks, video_name
 
-class REVISEDerivativeDataset(Dataset):
+class REVIDEPairDataset(Dataset):
     def __init__(
         self,
         root_dir,
