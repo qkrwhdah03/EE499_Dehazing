@@ -4,138 +4,118 @@ import torch.nn as nn
 import torch.nn.functional as F 
 from omegaconf import DictConfig, OmegaConf
 
-class ResidualBlock(nn.Module):
-    def __init__(self, ch):
+class ConvBlock(nn.Module):
+    def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(ch, ch, 3, padding=1),
-            nn.GroupNorm(num_groups=8, num_channels=ch),
-            nn.ReLU(),
-            nn.Conv2d(ch, ch, 3, padding=1),
-            nn.GroupNorm(num_groups=8, num_channels=ch),
+        self.net = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True),
         )
 
     def forward(self, x):
-        return x + self.conv(x)
+        return self.net(x)
 
-class DehazeEncoder(nn.Module):
-    def __init__(self, in_ch: int= 3, feat: int= 64)-> None:
+
+class Down(nn.Module):
+    def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
-        self.stem = nn.Sequential(
-            nn.Conv2d(in_ch, feat, 3, padding=1),
-            nn.ReLU(inplace=True),
-        )
+        self.net = nn.Sequential(nn.MaxPool2d(2), ConvBlock(in_ch, out_ch))
 
-        self.blocks = nn.Sequential(
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-        )
+    def forward(self, x):
+        return self.net(x)
 
-        self.head = nn.Sequential(
-            nn.Conv2d(feat, feat, 3, padding=1),
-            nn.ReLU(inplace=True),
-        )
-        
-        return
-    
-    def forward(self, x: torch.Tensor)-> torch.Tensor:
-        x = self.stem(x)
-        x = self.blocks(x)
-        x = self.head(x)
-        return x
-    
-class DehazeDecoder(nn.Module):
-    def __init__(self, num_frames:int, feat:int= 64, out_ch: int= 3)-> None:
+
+class Up(nn.Module):
+    def __init__(self, in_ch: int, skip_ch: int, out_ch: int):
         super().__init__()
-        
-        self.fusion = nn.Conv3d(
-            feat, feat,
-            kernel_size=(num_frames, 3, 3),
-            padding=(0, 1, 1)
+        self.up = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2)
+        self.conv = ConvBlock(out_ch + skip_ch, out_ch)
+
+    def forward(self, x, skip):
+        x = self.up(x)
+        if x.shape[-2:] != skip.shape[-2:]:
+            x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
+        x = torch.cat([skip, x], dim=1)
+        return self.conv(x)
+
+  
+class UNet(nn.Module):
+    def __init__(self, num_frames:int, base_ch: int):
+        super().__init__()
+        self.num_frames = num_frames
+        self.inc = ConvBlock(3 * num_frames, base_ch)
+        self.down1 = Down(base_ch, base_ch * 2)
+        self.down2 = Down(base_ch * 2, base_ch * 4)
+        self.down3 = Down(base_ch * 4, base_ch * 8)
+        self.down4 = Down(base_ch * 8, base_ch * 16)
+
+        self.up1 = Up(base_ch * 16, base_ch * 8, base_ch * 8)
+        self.up2 = Up(base_ch * 8, base_ch * 4, base_ch * 4)
+        self.up3 = Up(base_ch * 4, base_ch * 2, base_ch * 2)
+        self.up4 = Up(base_ch * 2, base_ch, base_ch)
+
+        self.clean_head = nn.Sequential(
+            nn.Conv2d(base_ch, 3, kernel_size=1),
+            nn.Sigmoid(),
         )
 
-        self.refine = nn.Sequential(
-            nn.Conv2d(feat, feat, 3, padding=1),
-            nn.ReLU(),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-            ResidualBlock(feat),
-        )
-
-        self.out = nn.Conv2d(feat, out_ch, 3, padding=1)
-        return
-    
-    def forward(self, x: torch.Tensor)-> torch.Tensor:
+    def forward(self, x):
+        '''
+        Input:
+            hazy video frames I: [B,T,3,H,W]
+        Outputs:
+            clean frame J: [B,3,H,W]
         """
-        x: [B, T, C, H, W]
-        """
-        B, T, C, H, W = x.shape
+        '''
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
 
-        x = x.permute(0, 2, 1, 3, 4)
+        y = self.up1(x5, x4)
+        y = self.up2(y, x3)
+        y = self.up3(y, x2)
+        y = self.up4(y, x1)
 
-        x = self.fusion(x)  # [B, C, t, H, W]
-        x = x.squeeze(2)   # [B, C, H, W]
+        y = self.clean_head(y)
 
-        x = self.refine(x)
-        x = self.out(x)
-        return x
+        return y
 
 
 class VideoDehazeModel(nn.Module):
-    def __init__(self, num_frames: int, feat: int, encoder: nn.Module, decoder: nn.Module):
+    def __init__(self, num_frames: int, dehazer: nn.Module):
         super().__init__()
         self.num_frames = num_frames
+        self.dehazer = dehazer
+        self.empty_pixel = nn.Parameter(torch.zeros(1, 1, 3, 1, 1))
 
-        self.encoder = encoder
-        self.decoder = decoder
-
-        self.empty_pixel = nn.Parameter(torch.zeros(1, feat, 1, 1))
-
-    def forward(self, frames, masks= None):
-        """
-        Forward function for training
-
-        frames: [B, T, 3, H, W]
-        """
-
+    def forward(self, frames, masks):
+        '''
+        Input:
+            frames I: [B,T,3,H,W]
+            masks: [B, T]
+        Outputs:
+            clean frame J: [B,3,H,W]
+        '''
         B, T, C, H, W = frames.shape
 
-        feats = []
+        masks = masks.view(B, T, 1, 1, 1)
+        empty = self.empty_pixel.expand(B, T, C, H, W)
+        frames = masks * frames + (1 - masks) * empty
+        x = frames.reshape(B, T * C, H, W)
+        x = self.dehazer(x)
+        
+        return x
 
-        if masks is not None:
-            masks_ = masks.view(B, T, 1, 1, 1)
 
-        for t in range(T):
-            f = self.encoder(frames[:, t])  # [B, F, H, W]
-
-            if masks is not None:
-                m = masks_[:, t] # [B, 1, 1, 1]
-                empty_frame = self.empty_pixel.expand(B, -1, H, W)
-                f = f + (1 - m) * empty_frame
-
-            feats.append(f)
-
-            if len(feats) > self.num_frames:
-                feats.pop(0)
-
-        x = torch.stack(feats, dim=1)  # [B, T, F, H, W]
-        out = self.decoder(x)
-
-        return out
-    
 def build_model(cfg: DictConfig)-> nn.Module:
-    encoder = DehazeEncoder(in_ch= 3, feat= cfg.encoder.embed_dim)
-    decoder = DehazeDecoder(num_frames= cfg.decoder.num_frames, feat= cfg.decoder.embed_dim, out_ch= 3)
-    model = VideoDehazeModel(num_frames= cfg.num_frames, feat= cfg.embed_dim, encoder= encoder, decoder= decoder)
+    dehazer = UNet(num_frames= cfg.num_frames, base_ch= cfg.embed_dim)
+    model = VideoDehazeModel(num_frames= cfg.num_frames, dehazer= dehazer)
     return model
 
 def load_model(checkpoint_path: str)-> nn.Module:
