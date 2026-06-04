@@ -79,7 +79,9 @@ def inference():
     model = load_model(args.checkpoint).to(device)
     model.eval()
 
-    os.makedirs(args.save_root, exist_ok=True)
+    checkpoint_dir_name = os.path.basename(os.path.dirname(args.checkpoint))
+    save_dir = os.path.join(args.save_root,checkpoint_dir_name)
+    os.makedirs(save_dir, exist_ok=True)
 
     for idx in range(len(dataset)):
 
@@ -107,7 +109,7 @@ def inference():
 
         preds = torch.stack(preds, dim=0)
 
-        save_path = os.path.join(args.save_root, f"{name}.mp4")
+        save_path = os.path.join(save_dir, f"{name}.mp4")
 
         writer = imageio.get_writer(save_path, fps=args.fps)
 
