@@ -13,17 +13,17 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--data_root",
-        type=str,
-        required=True,
-        help="Path to dataset root"
-    )
-
-    parser.add_argument(
         "--checkpoint",
         type=str,
         required=True,
         help="Path to model checkpoint (.pt)"
+    )
+
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        required=True,
+        help="Path to dataset root"
     )
 
     parser.add_argument(
@@ -40,9 +40,9 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--num_frames",
-        type=int,
-        default=4
+        "--crop",
+        type= bool,
+        default= False
     )
 
     parser.add_argument(
@@ -63,6 +63,11 @@ def parse_args():
 def inference():
     args = parse_args()
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model = load_model(args.checkpoint).to(device)
+    model.eval()
+
     transform = transforms.Compose([
         transforms.CenterCrop((args.crop_size, args.crop_size)),
     ])
@@ -70,14 +75,10 @@ def inference():
     dataset = REVIDEInferenceDataset(
         root_dir=args.data_root,
         split=args.split,
-        num_frames=args.num_frames,
-        transform=transform
+        num_frames= model.num_frames,
+        transform=transform if args.crop else None
     )
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model = load_model(args.checkpoint).to(device)
-    model.eval()
 
     checkpoint_dir_name = os.path.basename(os.path.dirname(args.checkpoint))
     save_dir = os.path.join(args.save_root,checkpoint_dir_name)
