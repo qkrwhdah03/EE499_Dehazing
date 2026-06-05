@@ -1,6 +1,7 @@
 import os
 import argparse
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from datetime import datetime
 
@@ -50,6 +51,7 @@ def train():
 
     set_seed(cfg.train.seed)
     model = build_model(cfg.model)
+    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
     criterion = L1Loss() if cfg.train.loss_type == 'l1' else L2Loss()
 
