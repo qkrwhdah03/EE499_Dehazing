@@ -10,10 +10,10 @@ class ConvBlock(nn.Module):
         self.net = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Conv2d(out_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
         )
 
     def forward(self, x):
@@ -23,7 +23,10 @@ class ConvBlock(nn.Module):
 class Down(nn.Module):
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
-        self.net = nn.Sequential(nn.MaxPool2d(2), ConvBlock(in_ch, out_ch))
+        self.net = nn.Sequential(
+            nn.MaxPool2d(2), 
+            ConvBlock(in_ch, out_ch)
+        )
 
     def forward(self, x):
         return self.net(x)
