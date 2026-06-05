@@ -1,6 +1,7 @@
 import os
 import argparse
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from datetime import datetime
 
@@ -50,9 +51,11 @@ def train():
 
     set_seed(cfg.train.seed)
     model = build_model(cfg.model)
+    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
     criterion = L1Loss() if cfg.train.loss_type == 'l1' else L2Loss()
     constraint = ASMVideoConstraint(patch_size= cfg.train.prior_patch_size, type= cfg.train.prior_loss_type)
+    smooth = L1Loss() if cfg.train.loss_type == 'l1' else L2Loss()
 
     transform = Transform(crop_size= cfg.train.transform.crop_size)
     dataset = REVIDEPairDataset(root_dir= cfg.train.dataset.root_dir, num_frames= cfg.train.dataset.num_frames, transform= transform)
@@ -97,10 +100,12 @@ def train():
             
             loss_t = criterion(output_t, gt_frame_t)
             loss_next = criterion(output_next, gt_frame_next)
+            
+            loss_smooth = smooth(output_t, output_next)
 
             loss_prior = constraint(output_t, output_next, current_hazy_t, current_hazy_next)
 
-            loss = loss_t + loss_next + cfg.train.prior_weight * loss_prior
+            loss = loss_t + loss_next + cfg.train.smooth_weight * loss_smooth + cfg.train.prior_weight * loss_prior
 
             accelerator.backward(loss)
 
