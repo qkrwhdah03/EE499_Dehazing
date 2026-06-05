@@ -56,7 +56,7 @@ You are encouraged to freely develop and extend your ideas in `train.py`. The cu
 Run training with:
 
 ```bash
-python train.py --config [yaml_file_path] --name [experiment_name]
+accelerate launch train.py --config [yaml_file_path] --name [experiment_name]
 ```
 
 ### Arguments
