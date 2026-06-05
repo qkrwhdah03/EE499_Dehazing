@@ -8,6 +8,7 @@ train:
   seed: 42
   epochs: 60
   loss_type: 'l1'
+  smooth_weight: 0.005 # Not used in train_base
   prior_loss_type: 'l1' # Not used in train_base
   prior_weight: 0.2   # Not used in train_base
   prior_patch_size: 11  # Not used in train_base, odd number
