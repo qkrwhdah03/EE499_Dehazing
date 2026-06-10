@@ -135,3 +135,26 @@ class ASMVideoConstraint(nn.Module):
         loss = self.criterion(J_t_pred, J_t_theoretical)
 
         return loss
+    
+class ASMVideoConstraintV2(nn.Module):
+    def __init__(self, type: str, reduction: str = "mean"):
+        super().__init__()
+        self.criterion = L1Loss(reduction) if type == 'l1' else L2Loss(reduction)
+        return
+        
+    def forward(self, pred_t, a_t, t_t, hazy_t, pred_next, a_next, t_next, hazy_next)-> torch.Tensor:
+        
+        dJ = pred_next - pred_t
+        dT = t_next - t_t
+        dA = a_next - a_t
+        dI = hazy_next - hazy_t
+        
+        J_mid = 0.5 * (pred_t + pred_next)
+        T_mid = 0.5 * (t_t + t_next)
+        A_mid = 0.5 * (a_t + a_next)
+        
+        rhs = dT * J_mid + T_mid * dJ - dT * A_mid + (1.0 - T_mid) * dA
+        
+        loss = self.criterion(dI, rhs)
+
+        return loss
