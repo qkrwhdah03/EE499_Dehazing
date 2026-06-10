@@ -47,8 +47,9 @@ class Up(nn.Module):
 
   
 class UNet(nn.Module):
-    def __init__(self, num_frames:int, base_ch: int):
+    def __init__(self, num_frames:int, base_ch: int, pred_asm: bool):
         super().__init__()
+        self.pred_asm = pred_asm
         self.num_frames = num_frames
         self.inc = ConvBlock(3 * num_frames, base_ch)
         self.down1 = Down(base_ch, base_ch * 2)
@@ -65,6 +66,17 @@ class UNet(nn.Module):
             nn.Conv2d(base_ch, 3, kernel_size=1),
             nn.Sigmoid(),
         )
+
+        if pred_asm:
+            self.a_head = nn.Sequential(
+                nn.Conv2d(base_ch, 3, kernel_size=3, padding= 1),
+                nn.Sigmoid(),
+            )
+
+            self.t_head = nn.Sequential(
+                nn.Conv2d(base_ch, 3, kernel_size=3, padding= 1),
+                nn.Sigmoid(),
+            )
 
     def forward(self, x):
         '''
@@ -85,9 +97,13 @@ class UNet(nn.Module):
         y = self.up3(y, x2)
         y = self.up4(y, x1)
 
-        y = self.clean_head(y)
-
-        return y
+        j = self.clean_head(y)
+        if self.pred_asm:
+            a = self.a_head(y)
+            t = self.t_head(y)
+            return j, a, t
+        else:
+            return j
 
 
 class VideoDehazeModel(nn.Module):
@@ -95,6 +111,7 @@ class VideoDehazeModel(nn.Module):
         super().__init__()
         self.num_frames = num_frames
         self.dehazer = dehazer
+        self.pred_asm = dehazer.pred_asm
         self.empty_pixel = nn.Parameter(torch.zeros(1, 1, 3, 1, 1))
 
     def forward(self, frames, masks):
@@ -111,13 +128,16 @@ class VideoDehazeModel(nn.Module):
         empty = self.empty_pixel.expand(B, T, C, H, W)
         frames = masks * frames + (1 - masks) * empty
         x = frames.reshape(B, T * C, H, W)
-        x = self.dehazer(x)
-        
-        return x
+        if self.pred_asm:
+            x, a, t = self.dehazer(x)
+            return x, a, t
+        else:
+            x = self.dehazer(x)
+            return x
 
 
 def build_model(cfg: DictConfig)-> nn.Module:
-    dehazer = UNet(num_frames= cfg.num_frames, base_ch= cfg.embed_dim)
+    dehazer = UNet(num_frames= cfg.num_frames, base_ch= cfg.embed_dim, pred_asm= cfg.pred_asm)
     model = VideoDehazeModel(num_frames= cfg.num_frames, dehazer= dehazer)
     return model
 
