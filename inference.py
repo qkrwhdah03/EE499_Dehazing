@@ -57,13 +57,19 @@ def parse_args():
         default=20
     )
 
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=0
+    )
+
     return parser.parse_args()
 
 
 def inference():
     args = parse_args()
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() else 'cpu')
 
     model = load_model(args.checkpoint).to(device)
     model.eval()
@@ -100,7 +106,10 @@ def inference():
             mask = masks[t].unsqueeze(0).to(device)
 
             with torch.no_grad():
-                pred = model(clip, mask)
+                if model.dehazer.asm_pred:
+                    pred, _, _ = model(clip, mask)
+                else:
+                    pred = model(clip, mask)
 
             pred = pred.squeeze(0).cpu()
 
