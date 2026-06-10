@@ -106,7 +106,7 @@ def inference():
             mask = masks[t].unsqueeze(0).to(device)
 
             with torch.no_grad():
-                if model.dehazer.asm_pred:
+                if model.dehazer.pred_asm:
                     pred, _, _ = model(clip, mask)
                 else:
                     pred = model(clip, mask)
