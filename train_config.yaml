@@ -1,4 +1,5 @@
 model: 
+  pred_asm: true
   num_frames: 3 # Must be matched with dataset.num_frmaes
   embed_dim: 64
     
