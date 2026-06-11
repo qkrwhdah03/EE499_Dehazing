@@ -8,7 +8,7 @@ from datetime import datetime
 from omegaconf import OmegaConf
 from accelerate import Accelerator
 from tqdm.auto import tqdm
-from utils import set_seed, L1Loss, L2Loss, get_clean_state_dict
+from utils import set_seed, L1Loss, L2Loss, get_clean_state_dict, save_loss_curve
 from model import build_model
 from dataset import Transform, REVIDEDataset
 
@@ -77,6 +77,9 @@ def train():
         disable=not accelerator.is_local_main_process,
         desc="Epochs",
     )
+
+    losses = []
+
     for epoch in epoch_bar:
         
         step_bar = tqdm(
@@ -85,6 +88,9 @@ def train():
             desc=f"Epoch {epoch}",
             leave=False,
         )
+
+        loss = 0.0
+        cnt = 0
 
         for step, (hazy_frames, gt_frame, masks) in enumerate(step_bar):
             output = model(hazy_frames, masks)
@@ -100,11 +106,16 @@ def train():
 
             reduced_loss = accelerator.reduce(loss.detach(), reduction="mean")
 
+            loss += reduced_loss
+            cnt += 1
+
             if accelerator.is_main_process:
                 step_bar.set_postfix({
                     "loss": f"{reduced_loss.item():.4f}"
                 })
         
+        losses.append(loss/cnt)  
+
         if epoch % cfg.train.save_interval == 0 and accelerator.is_main_process:
             checkpoint_save_path = os.path.join(save_dir_path, f"checkpoint_{epoch}.pt")
             uwrapped_model = accelerator.unwrap_model(model)
@@ -114,6 +125,8 @@ def train():
         checkpoint_save_path = os.path.join(save_dir_path, "final.pt")
         uwrapped_model = accelerator.unwrap_model(model)
         torch.save(get_clean_state_dict(uwrapped_model), checkpoint_save_path)
+
+        save_loss_curve(losses, save_dir_path)
 
 if __name__ == "__main__":
     train()
