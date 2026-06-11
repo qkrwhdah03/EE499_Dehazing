@@ -29,6 +29,11 @@ def get_clean_state_dict(model):
 
 def save_loss_curve(losses, save_dir):
 
+    np.save(
+        os.path.join(save_dir, "loss.npy"),
+        np.array(losses, dtype=np.float32)
+    )
+
     plt.figure(figsize=(8, 5))
 
     plt.plot(
