@@ -1,3 +1,5 @@
+import os
+import matplotlib.pyplot as plt
 import random
 import numpy as np
 import torch
@@ -24,6 +26,30 @@ def get_clean_state_dict(model):
         for k, v in raw_state_dict.items()
     }
     return clean_state_dict
+
+def save_loss_curve(losses, save_dir):
+
+    plt.figure(figsize=(8, 5))
+
+    plt.plot(
+        range(1, len(losses) + 1),
+        losses,
+        marker="o",
+        linewidth=2
+    )
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
+    plt.grid(True, alpha=0.3)
+
+    plt.savefig(
+        os.path.join(save_dir, "loss_curve.png"),
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.close()
 
 class L1Loss(nn.Module):
     def __init__(self, reduction: str = "mean"):
