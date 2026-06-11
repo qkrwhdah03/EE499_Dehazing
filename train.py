@@ -91,7 +91,7 @@ def train():
             leave=False,
         )
 
-        loss = 0.0
+        loss_sum = 0.0
         cnt = 0
 
         for step, (batch_t, batch_next) in enumerate(step_bar):
@@ -123,7 +123,7 @@ def train():
 
             reduced_loss = accelerator.reduce(loss.detach(), reduction="mean")
 
-            loss += reduced_loss
+            loss_sum += reduced_loss.item()
             cnt += 1
 
             if accelerator.is_main_process:
@@ -131,7 +131,7 @@ def train():
                     "loss": f"{reduced_loss.item():.4f}"
                 })
 
-        losses.append(loss/cnt) 
+        losses.append(loss_sum/cnt) 
         
         if epoch % cfg.train.save_interval == 0 and accelerator.is_main_process:
             checkpoint_save_path = os.path.join(save_dir_path, f"checkpoint_{epoch}.pt")
